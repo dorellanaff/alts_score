@@ -1,43 +1,26 @@
-from typing import Union
-from pydantic import BaseModel, Field
-from fastapi import FastAPI, status, Response
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Query, HTTPException
+from pydantic import BaseModel
 
 app = FastAPI()
-SYSTEMS_FAILURE = {
-  "navigation": "NAV-01",
-  "communications": "COM-02",
-  "life_support": "LIFE-03",
-  "engines": "ENG-04",
-  "deflector_shield": "SHLD-05"
+
+# Datos aproximados de saturación (basados en el diagrama)
+phase_data = {
+    0.05: {"specific_volume_liquid": 0.00105, "specific_volume_vapor": 30.0},
+    1:    {"specific_volume_liquid": 0.0012,  "specific_volume_vapor": 0.1},
+    5:    {"specific_volume_liquid": 0.0015,  "specific_volume_vapor": 0.01},
+    10:   {"specific_volume_liquid": 0.0035,  "specific_volume_vapor": 0.0035},  # Punto crítico
 }
-DEFECT = "deflector_shield"
 
-class StatusResponse(BaseModel):
-    damaged_system: str = Field(default="<pick one of the systems>", title="damaged system")
-    
+class PhaseChangeResponse(BaseModel):
+    specific_volume_liquid: float
+    specific_volume_vapor: float
 
-@app.get("/status", status_code=status.HTTP_200_OK)
-def get_status() -> StatusResponse:
-    return {"damaged_system": DEFECT}
+@app.get("/phase-change-diagram", response_model=PhaseChangeResponse)
+def get_phase_data(pressure: float = Query(..., gt=0)):
+    if pressure < 0.05:
+        raise HTTPException(status_code=400, detail="Pressure too low. Data only available for T > 30°C.")
 
+    if pressure in phase_data:
+        return phase_data[pressure]
 
-@app.get("/repair-bay", status_code=status.HTTP_200_OK)
-def repair_bay():
-    html_content = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Repair</title>
-    </head>
-    <body>
-    <div class="anchor-point">{SYSTEMS_FAILURE.get(DEFECT)}</div>
-    </body>
-    </html>
-    """
-    return HTMLResponse(content=html_content, status_code=200)
-
-
-@app.post("/teapot", status_code=status.HTTP_418_IM_A_TEAPOT)
-def iam_teapot():
-    return Response(status_code=status.HTTP_418_IM_A_TEAPOT)
+    raise HTTPException(status_code=404, detail="No data available for this pressure.")
